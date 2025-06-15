@@ -1,9 +1,12 @@
 package com.example.edulist;
 
 import android.app.AlarmManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.util.Log;
 
 import java.text.ParseException;
@@ -20,8 +23,14 @@ public class NotificationHelper {
     public static void scheduleNotification(Context context, EduList eduList) {
         Log.d(TAG, "Attempting to schedule notification for: " + eduList.getName() +
                 ", reminder time: " + eduList.getReminder());
+
         if (eduList.getReminder() == null || eduList.getReminder().isEmpty()) {
             Log.d(TAG, "No reminder set for list: " + eduList.getName());
+            return;
+        }
+
+        if (eduList.getId() <= 0) {
+            Log.e(TAG, "Invalid list ID for scheduling: " + eduList.getId());
             return;
         }
 
@@ -36,10 +45,24 @@ public class NotificationHelper {
             Calendar calendar = Calendar.getInstance();
             calendar.setTime(reminderDate);
 
-            // Skip if the reminder time is in the past
-            if (calendar.getTimeInMillis() <= System.currentTimeMillis()) {
-                Log.d(TAG, "Skipping reminder in the past for: " + eduList.getName());
+            long currentTime = System.currentTimeMillis();
+            long reminderTime = calendar.getTimeInMillis();
+
+            // Skip if the reminder time is in the past (with 1 minute buffer)
+            if (reminderTime <= currentTime + 60000) {
+                Log.d(TAG, "Skipping reminder in the past for: " + eduList.getName() +
+                        ". Reminder: " + reminderTime + ", Current: " + currentTime);
                 return;
+            }
+
+            // Ensure notification channel exists before scheduling
+            createNotificationChannel(context);
+
+            // Wait a moment for channel creation to complete on older devices
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
 
             // Create an intent for the broadcast receiver
@@ -47,39 +70,89 @@ public class NotificationHelper {
             intent.putExtra("LIST_NAME", eduList.getName());
             intent.putExtra("LIST_ID", eduList.getId());
             intent.putExtra("FOLDER_ID", eduList.getFolderId());
+            intent.putExtra("DUE_DATE", eduList.getDueDate()); // Pass due date to receiver
 
             // Create a PendingIntent to be triggered when the alarm fires
             PendingIntent pendingIntent = PendingIntent.getBroadcast(
                     context,
                     (int) eduList.getId(),
                     intent,
-                    PendingIntent.FLAG_IMMUTABLE
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
 
             // Setup alarm to trigger at the reminder time
             AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
 
             if (alarmManager != null) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                            AlarmManager.RTC_WAKEUP,
-                            calendar.getTimeInMillis(),
-                            pendingIntent
-                    );
-                } else {
-                    alarmManager.setExact(
-                            AlarmManager.RTC_WAKEUP,
-                            calendar.getTimeInMillis(),
-                            pendingIntent
-                    );
-                }
+                try {
+                    // Check if we can schedule exact alarms on Android 12+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (alarmManager.canScheduleExactAlarms()) {
+                            alarmManager.setExactAndAllowWhileIdle(
+                                    AlarmManager.RTC_WAKEUP,
+                                    reminderTime,
+                                    pendingIntent
+                            );
+                            Log.d(TAG, "Exact alarm scheduled with setExactAndAllowWhileIdle");
+                        } else {
+                            // Fallback for when exact alarms aren't allowed
+                            alarmManager.setAndAllowWhileIdle(
+                                    AlarmManager.RTC_WAKEUP,
+                                    reminderTime,
+                                    pendingIntent
+                            );
+                            Log.d(TAG, "Approximate alarm scheduled with setAndAllowWhileIdle");
+                        }
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        alarmManager.setExactAndAllowWhileIdle(
+                                AlarmManager.RTC_WAKEUP,
+                                reminderTime,
+                                pendingIntent
+                        );
+                        Log.d(TAG, "Exact alarm scheduled for Android M+");
+                    } else {
+                        alarmManager.setExact(
+                                AlarmManager.RTC_WAKEUP,
+                                reminderTime,
+                                pendingIntent
+                        );
+                        Log.d(TAG, "Exact alarm scheduled for older Android");
+                    }
 
-                Log.d(TAG, "Reminder scheduled for " + eduList.getName() + " at " +
-                        dateFormat.format(reminderDate));
+                    Log.d(TAG, "Reminder successfully scheduled for " + eduList.getName() +
+                            " at " + dateFormat.format(reminderDate) +
+                            " (in " + ((reminderTime - currentTime) / 1000) + " seconds)");
+
+                } catch (SecurityException e) {
+                    Log.e(TAG, "Permission denied for setting exact alarm: " + e.getMessage());
+                }
+            } else {
+                Log.e(TAG, "AlarmManager not available");
             }
 
         } catch (ParseException e) {
             Log.e(TAG, "Error parsing reminder date: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void createNotificationChannel(Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            CharSequence name = "EduList Reminders";
+            String description = "Notification channel for EduList assignment reminders";
+            int importance = NotificationManager.IMPORTANCE_HIGH;
+            String CHANNEL_ID = "EduListReminderChannel";
+
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
+            channel.setDescription(description);
+            channel.enableLights(true);
+            channel.enableVibration(true);
+
+            NotificationManager notificationManager = context.getSystemService(NotificationManager.class);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+                Log.d(TAG, "Notification channel created");
+            }
         }
     }
 
@@ -89,7 +162,7 @@ public class NotificationHelper {
                 context,
                 (int) listId,
                 intent,
-                PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);

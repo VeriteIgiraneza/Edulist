@@ -7,14 +7,17 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.os.Build;
 
 import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -25,11 +28,9 @@ import java.util.Calendar;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements AssignmentAdapter.OnAssignmentActionListener, SwipeToDeleteCallback.SwipeActionListener {
 
     private static final String TAG = "MainActivity";
     private RecyclerView workListView;
@@ -78,6 +79,10 @@ public class MainActivity extends AppCompatActivity {
         addFolderButton = findViewById(R.id.addFolderButton);
         dueSoonHeaderView = findViewById(R.id.dueSoonHeader);
 
+        // Setup swipe functionality
+        SwipeToDeleteCallback swipeCallback = new SwipeToDeleteCallback(this, this);
+        ItemTouchHelper itemTouchHelper = new ItemTouchHelper(swipeCallback);
+
         // Check if we're opening a specific folder or showing all lists
         if (getIntent().hasExtra("FOLDER_ID")) {
             currentFolderId = getIntent().getLongExtra("FOLDER_ID", -1);
@@ -95,24 +100,12 @@ public class MainActivity extends AppCompatActivity {
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
                     if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                        String listName = result.getData().getStringExtra(NewListActivity.EXTRA_LIST_NAME);
-                        long folderId = result.getData().getLongExtra(NewListActivity.EXTRA_FOLDER_ID, -1);
-                        String dueDate = result.getData().getStringExtra(NewListActivity.EXTRA_LIST_DUE_DATE);
-                        String reminder = result.getData().getStringExtra(NewListActivity.EXTRA_LIST_REMINDER);
-
-                        EduList newList = new EduList(listName, folderId, dueDate, reminder);
-
-                        long listId = dbHelper.addList(newList);
-
-                        if (listId != -1) {
-                            newList.setId(listId);
-                            loadLists();
-                        } else {
-                            Toast.makeText(MainActivity.this, "Failed to create list", Toast.LENGTH_SHORT).show();
-                        }
+                        // Just refresh the list since NewListActivity already created the list
+                        loadLists();
                     }
                 }
         );
+
 
         viewFoldersLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
@@ -122,6 +115,9 @@ public class MainActivity extends AppCompatActivity {
         );
 
         loadLists();
+
+        // Attach swipe helper to RecyclerView
+        itemTouchHelper.attachToRecyclerView(workListView);
 
         addFolderButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -147,19 +143,89 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        Button testButton = findViewById(R.id.testButton);
-        testButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                setupTestReminder();
-            }
-        });
+//        Button testButton = findViewById(R.id.testButton);
+//        if (testButton != null) {
+//            testButton.setOnClickListener(new View.OnClickListener() {
+//                @Override
+//                public void onClick(View v) {
+//                    setupTestReminder();
+//                }
+//            });
+//        }
+    }
+
+    // AssignmentAdapter.OnAssignmentActionListener implementation
+    @Override
+    public void onAssignmentClick(EduList assignment) {
+        Toast.makeText(this, "Selected: " + assignment.getName(), Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onAssignmentDelete(EduList assignment) {
+        // This will be called from swipe - handled in SwipeActionListener
+    }
+
+    @Override
+    public void onAssignmentComplete(EduList assignment) {
+        // This will be called from swipe - handled in SwipeActionListener
+    }
+
+    // SwipeToDeleteCallback.SwipeActionListener implementation
+    @Override
+    public void onDelete(int position) {
+        EduList assignment = assignmentAdapter.getItem(position);
+        if (assignment == null) return;
+
+        new AlertDialog.Builder(this)
+                .setTitle("Delete Assignment")
+                .setMessage("Are you sure you want to delete '" + assignment.getName() + "'?")
+                .setPositiveButton("Delete", (dialog, which) -> {
+                    // Cancel notification if it exists
+                    if (assignment.getReminder() != null && !assignment.getReminder().isEmpty()) {
+                        NotificationHelper.cancelNotification(this, assignment.getId());
+                    }
+
+                    // Delete from database
+                    dbHelper.deleteList(assignment.getId());
+
+                    // Remove from adapter
+                    assignmentAdapter.removeItem(position);
+
+                    Toast.makeText(this, "Assignment deleted", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    // Restore the item
+                    assignmentAdapter.notifyItemChanged(position);
+                })
+                .setOnCancelListener(dialog -> {
+                    // Restore the item if dialog is canceled
+                    assignmentAdapter.notifyItemChanged(position);
+                })
+                .show();
+    }
+
+    @Override
+    public void onComplete(int position) {
+        EduList assignment = assignmentAdapter.getItem(position);
+        if (assignment == null) return;
+
+        // Toggle completion status
+        assignment.setCompleted(!assignment.isCompleted());
+
+        // Update in database
+        dbHelper.updateList(assignment);
+
+        // Refresh the list to reorder items (completed items go to bottom)
+        loadLists();
+
+        String message = assignment.isCompleted() ? "Assignment completed!" : "Assignment marked as incomplete";
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
     private void setupTestReminder() {
-        // Create a test list with a reminder 30 seconds from now
+        // Create a test list with a reminder 3 seconds from now
         Calendar testReminder = Calendar.getInstance();
-        testReminder.add(Calendar.SECOND, 3);  // 30 seconds from now
+        testReminder.add(Calendar.SECOND, 3);
 
         SimpleDateFormat fullFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
         String reminderTime = fullFormat.format(testReminder.getTime());
@@ -174,7 +240,7 @@ public class MainActivity extends AppCompatActivity {
 
             // Schedule notification
             NotificationHelper.scheduleNotification(this, testList);
-            Toast.makeText(this, "Test notification scheduled for 30 seconds from now", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Test notification scheduled for 3 seconds from now", Toast.LENGTH_LONG).show();
 
             // Refresh the list view
             loadLists();
@@ -182,8 +248,6 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Failed to create test reminder", Toast.LENGTH_SHORT).show();
         }
     }
-
-
 
     private void loadLists() {
         if (currentFolderId != -1) {
@@ -197,12 +261,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (assignmentAdapter == null) {
-            assignmentAdapter = new AssignmentAdapter(this, eduLists, new AssignmentAdapter.OnAssignmentClickListener() {
-                @Override
-                public void onAssignmentClick(EduList assignment) {
-                    Toast.makeText(MainActivity.this, "Selected: " + assignment.getName(), Toast.LENGTH_SHORT).show();
-                }
-            });
+            assignmentAdapter = new AssignmentAdapter(this, eduLists, this);
             workListView.setAdapter(assignmentAdapter);
         } else {
             assignmentAdapter.updateAssignments(eduLists);

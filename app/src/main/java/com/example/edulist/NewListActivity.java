@@ -10,8 +10,11 @@ import android.widget.Button;
 import android.widget.DatePicker;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.TimePicker;
 import android.widget.Toast;
+import android.widget.ImageView;
+
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -19,6 +22,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
@@ -40,6 +44,13 @@ public class NewListActivity extends AppCompatActivity {
     private long folderId;
     private String folderName;
 
+    private ImageView clearDueDateButton;
+    private ImageView clearReminderButton;
+
+    // Edit mode variables
+    private boolean isEditMode = false;
+    private long editListId = -1;
+
     public static final String EXTRA_LIST_NAME = "com.example.edulist.LIST_NAME";
     public static final String EXTRA_LIST_DUE_DATE = "com.example.edulist.LIST_DUE_DATE";
     public static final String EXTRA_LIST_REMINDER = "com.example.edulist.LIST_REMINDER";
@@ -48,7 +59,6 @@ public class NewListActivity extends AppCompatActivity {
     private SimpleDateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy", Locale.US);
     private SimpleDateFormat timeFormat = new SimpleDateFormat("hh:mm a", Locale.US);
     private SimpleDateFormat fullFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
-
 
     public String getFolderName() {
         return folderName;
@@ -70,10 +80,18 @@ public class NewListActivity extends AppCompatActivity {
             return insets;
         });
 
-        folderId = getIntent().getLongExtra(EXTRA_FOLDER_ID, -1);
+        // Check if we're in edit mode
+        isEditMode = getIntent().getBooleanExtra("EDIT_MODE", false);
+
+        if (isEditMode) {
+            editListId = getIntent().getLongExtra("LIST_ID", -1);
+            folderId = getIntent().getLongExtra("FOLDER_ID", -1);
+        } else {
+            folderId = getIntent().getLongExtra(EXTRA_FOLDER_ID, -1);
+        }
 
         if (folderId == -1) {
-            Toast.makeText(this, "Error: No folder selected", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "", Toast.LENGTH_SHORT).show();
             finish();
             return;
         }
@@ -82,6 +100,13 @@ public class NewListActivity extends AppCompatActivity {
         doneButton = findViewById(R.id.donelist);
         dueDateContainer = findViewById(R.id.dueDateContainer);
         reminderContainer = findViewById(R.id.reminderContainer);
+        clearDueDateButton = findViewById(R.id.clearDueDateButton);
+        clearReminderButton = findViewById(R.id.clearReminderButton);
+
+        // Pre-fill data if in edit mode
+        if (isEditMode) {
+            loadEditData();
+        }
 
         dueDateContainer.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -97,12 +122,81 @@ public class NewListActivity extends AppCompatActivity {
             }
         });
 
+        clearDueDateButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                clearDueDate();
+            }
+        });
+
+        clearReminderButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                clearReminder();
+            }
+        });
+
         doneButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 saveListAndFinish();
             }
         });
+    }
+
+    private void clearDueDate() {
+        hasDueDate = false;
+        TextView dueDateText = findViewById(R.id.dueDateText);
+        dueDateText.setText("Due");
+        clearDueDateButton.setVisibility(View.GONE);
+        Toast.makeText(this, "Due date cleared", Toast.LENGTH_SHORT).show();
+    }
+
+    private void clearReminder() {
+        hasReminder = false;
+        TextView reminderText = findViewById(R.id.reminderText);
+        reminderText.setText("Reminder");
+        clearReminderButton.setVisibility(View.GONE);
+        Toast.makeText(this, "Reminder cleared", Toast.LENGTH_SHORT).show();
+    }
+
+    private void loadEditData() {
+        // Pre-fill the list name
+        String listName = getIntent().getStringExtra("LIST_NAME");
+        if (listName != null) {
+            listNameEditText.setText(listName);
+        }
+
+        // Load due date
+        String dueDate = getIntent().getStringExtra("DUE_DATE");
+        if (dueDate != null && !dueDate.isEmpty()) {
+            try {
+                dueDateCalendar.setTime(fullFormat.parse(dueDate));
+                hasDueDate = true;
+                // Update the TextView to show the selected date
+                TextView dueDateText = findViewById(R.id.dueDateText);
+                dueDateText.setText(dateFormat.format(dueDateCalendar.getTime()));
+                clearDueDateButton.setVisibility(View.VISIBLE);
+            } catch (ParseException e) {
+                hasDueDate = false;
+            }
+        }
+
+        // Load reminder
+        String reminder = getIntent().getStringExtra("REMINDER");
+        if (reminder != null && !reminder.isEmpty()) {
+            try {
+                reminderCalendar.setTime(fullFormat.parse(reminder));
+                hasReminder = true;
+                // Update the TextView to show the selected date and time
+                TextView reminderText = findViewById(R.id.reminderText);
+                reminderText.setText(dateFormat.format(reminderCalendar.getTime())
+                        + " " + timeFormat.format(reminderCalendar.getTime()));
+                clearReminderButton.setVisibility(View.VISIBLE);
+            } catch (ParseException e) {
+                hasReminder = false;
+            }
+        }
     }
 
     private void showDatePicker() {
@@ -115,6 +209,11 @@ public class NewListActivity extends AppCompatActivity {
                         dueDateCalendar.set(Calendar.MONTH, month);
                         dueDateCalendar.set(Calendar.DAY_OF_MONTH, dayOfMonth);
                         hasDueDate = true;
+
+                        // Update the TextView to show the loaded date
+                        TextView dueDateText = findViewById(R.id.dueDateText);
+                        dueDateText.setText(dateFormat.format(dueDateCalendar.getTime()));
+                        clearDueDateButton.setVisibility(View.VISIBLE);
 
                         Toast.makeText(NewListActivity.this,
                                 "Due Date set: " + dateFormat.format(dueDateCalendar.getTime()),
@@ -156,7 +255,15 @@ public class NewListActivity extends AppCompatActivity {
                     public void onTimeSet(TimePicker view, int hourOfDay, int minute) {
                         reminderCalendar.set(Calendar.HOUR_OF_DAY, hourOfDay);
                         reminderCalendar.set(Calendar.MINUTE, minute);
+                        reminderCalendar.set(Calendar.SECOND, 0);
+                        reminderCalendar.set(Calendar.MILLISECOND, 0);
                         hasReminder = true;
+
+                        // Update the TextView to show the loaded reminder
+                        TextView reminderText = findViewById(R.id.reminderText);
+                        reminderText.setText(dateFormat.format(reminderCalendar.getTime())
+                                + " " + timeFormat.format(reminderCalendar.getTime()));
+                        clearReminderButton.setVisibility(View.VISIBLE);
 
                         Toast.makeText(NewListActivity.this,
                                 "Reminder set: " + dateFormat.format(reminderCalendar.getTime())
@@ -172,6 +279,11 @@ public class NewListActivity extends AppCompatActivity {
     }
 
     private void saveListAndFinish() {
+        Log.d("NewListActivity", "saveListAndFinish called");
+        Log.d("NewListActivity", "hasReminder: " + hasReminder);
+        if (hasReminder) {
+            Log.d("NewListActivity", "Reminder time: " + fullFormat.format(reminderCalendar.getTime()));
+        }
         String listName = listNameEditText.getText().toString().trim();
 
         if (TextUtils.isEmpty(listName)) {
@@ -179,45 +291,68 @@ public class NewListActivity extends AppCompatActivity {
             return;
         }
 
-        Intent resultIntent = new Intent();
-        resultIntent.putExtra(EXTRA_LIST_NAME, listName);
-        resultIntent.putExtra(EXTRA_FOLDER_ID, folderId);
-
-        if (hasDueDate) {
-            resultIntent.putExtra(EXTRA_LIST_DUE_DATE, fullFormat.format(dueDateCalendar.getTime()));
-        }
-
-        if (hasReminder) {
-            resultIntent.putExtra(EXTRA_LIST_REMINDER, fullFormat.format(reminderCalendar.getTime()));
-        }
-
-        // Create the list and save to database first
-        EduList newList = new EduList(listName, folderId,
-                hasDueDate ? fullFormat.format(dueDateCalendar.getTime()) : null,
-                hasReminder ? fullFormat.format(reminderCalendar.getTime()) : null);
-
         DatabaseHelper dbHelper = new DatabaseHelper(this);
-        long listId = dbHelper.addList(newList);
 
-        if (listId != -1) {
-            // Set the ID so notification scheduling works properly
-            newList.setId(listId);
+        if (isEditMode) {
+            // Update existing list
+            EduList existingList = dbHelper.getList(editListId);
+            if (existingList != null) {
+                // Cancel old notification
+                if (existingList.getReminder() != null && !existingList.getReminder().isEmpty()) {
+                    NotificationHelper.cancelNotification(this, existingList.getId());
+                }
 
-            // Schedule the notification if we have a reminder
-            if (hasReminder) {
-                NotificationHelper.scheduleNotification(this, newList);
-                Toast.makeText(this, "Reminder scheduled for: " + listName, Toast.LENGTH_SHORT).show();
+                // Update the list
+                existingList.setName(listName);
+                existingList.setDueDate(hasDueDate ? fullFormat.format(dueDateCalendar.getTime()) : null);
+                existingList.setReminder(hasReminder ? fullFormat.format(reminderCalendar.getTime()) : null);
+
+                int rowsUpdated = dbHelper.updateList(existingList);
+
+                if (rowsUpdated > 0) {
+                    // Schedule new notification if reminder is set
+                    if (hasReminder) {
+                        NotificationHelper.scheduleNotification(this, existingList);
+                    }
+
+                    Toast.makeText(this, "List updated: " + listName, Toast.LENGTH_SHORT).show();
+                    finish();
+                } else {
+                    Toast.makeText(this, "Failed to update list", Toast.LENGTH_SHORT).show();
+                }
             }
-
-            // Set result and finish the activity
-            setResult(RESULT_OK, resultIntent);
-            Toast.makeText(this, "List created: " + listName, Toast.LENGTH_SHORT).show();
-            finish();
         } else {
-            Toast.makeText(this, "Failed to create list", Toast.LENGTH_SHORT).show();
+            // Create new list (original functionality)
+            // Create the list and save to database first
+            EduList newList = new EduList(listName, folderId,
+                    hasDueDate ? fullFormat.format(dueDateCalendar.getTime()) : null,
+                    hasReminder ? fullFormat.format(reminderCalendar.getTime()) : null);
+
+            long listId = dbHelper.addList(newList);
+
+            if (listId != -1) {
+                // Set the ID so notification scheduling works properly
+                newList.setId(listId);
+
+                // Schedule the notification if we have a reminder
+                if (hasReminder) {
+                    NotificationHelper.createNotificationChannel(this);
+                    NotificationHelper.scheduleNotification(this, newList);
+                    Toast.makeText(this, "Reminder scheduled for: " + listName, Toast.LENGTH_SHORT).show();
+                }
+
+                // Set result and finish the activity
+                Intent resultIntent = new Intent();
+                resultIntent.putExtra(EXTRA_LIST_NAME, listName);
+                resultIntent.putExtra(EXTRA_FOLDER_ID, folderId);
+                setResult(RESULT_OK, resultIntent);
+                Toast.makeText(this, "List created: " + listName, Toast.LENGTH_SHORT).show();
+                finish();
+            } else {
+                Toast.makeText(this, "Failed to create list", Toast.LENGTH_SHORT).show();
+            }
         }
     }
-
 
     // For testing in NewListActivity
     private void setupTestReminder() {

@@ -24,24 +24,22 @@ public class NotificationActionReceiver extends BroadcastReceiver {
         NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
 
         try {
-            // Always cancel the notification first
-            notificationManager.cancel((int) listId);
-
             if ("COMPLETE_ACTION".equals(action)) {
                 // Mark the task as completed
                 DatabaseHelper dbHelper = new DatabaseHelper(context);
                 EduList eduList = dbHelper.getList(listId);
 
                 if (eduList != null) {
-                    // Here you can add logic to mark the list item as completed
-                    // For example, you might add a 'completed' field to your EduList class
-                    // eduList.setCompleted(true);
-                    // dbHelper.updateList(eduList);
-
+                    eduList.setCompleted(true);
+                    dbHelper.updateList(eduList);
                     Log.d(TAG, "Marked list as completed: " + eduList.getName());
                 }
+
+                // Cancel the notification after completing
+                notificationManager.cancel((int) listId);
             } else if ("DISMISS_ACTION".equals(action)) {
-                // Just dismiss the notification, already done above
+                // Cancel the notification on dismiss
+                notificationManager.cancel((int) listId);
                 Log.d(TAG, "Notification dismissed for list ID: " + listId);
             }
         } catch (SecurityException e) {

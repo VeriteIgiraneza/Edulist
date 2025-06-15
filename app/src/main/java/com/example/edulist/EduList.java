@@ -7,10 +7,10 @@ public class EduList {
     private String dueDate;
     private String reminder;
     private String folderName; // Added to store folder name
-
     private boolean completed;
 
     public EduList() {
+        this.completed = false; // Default to not completed
     }
 
     public EduList(String name, long folderId, String dueDate, String reminder) {
@@ -18,6 +18,7 @@ public class EduList {
         this.folderId = folderId;
         this.dueDate = dueDate;
         this.reminder = reminder;
+        this.completed = false; // Default to not completed
     }
 
     public EduList(long id, String name, long folderId, String dueDate, String reminder) {
@@ -26,6 +27,17 @@ public class EduList {
         this.folderId = folderId;
         this.dueDate = dueDate;
         this.reminder = reminder;
+        this.completed = false; // Default to not completed
+    }
+
+    // New constructor with completion status
+    public EduList(long id, String name, long folderId, String dueDate, String reminder, boolean completed) {
+        this.id = id;
+        this.name = name;
+        this.folderId = folderId;
+        this.dueDate = dueDate;
+        this.reminder = reminder;
+        this.completed = completed;
     }
 
     public long getId() {
@@ -76,16 +88,16 @@ public class EduList {
         this.folderName = folderName;
     }
 
-    @Override
-    public String toString() {
-        return name;
-    }
-
     public boolean isCompleted() {
         return completed;
     }
 
     public void setCompleted(boolean completed) {
         this.completed = completed;
+    }
+
+    @Override
+    public String toString() {
+        return name;
     }
 }

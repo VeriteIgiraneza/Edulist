@@ -194,9 +194,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     cursor.getString(1),
                     cursor.getLong(2),
                     cursor.getString(3),
-                    cursor.getString(4)
+                    cursor.getString(4),
+                    cursor.getInt(5) == 1  // completion status
             );
-            list.setCompleted(cursor.getInt(5) == 1);
             cursor.close();
             return list;
         }
@@ -211,11 +211,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public List<EduList> getAllListsByFolderSortedByDueDate(long folderId) {
         List<EduList> listItems = new ArrayList<>();
 
-        // This query selects lists by folder ID and orders by due date
-        // NULL due dates will be at the end of the list
+        // Order by completion first (incomplete items first), then by due date
         String selectQuery = "SELECT * FROM " + TABLE_LISTS +
                 " WHERE " + KEY_FOLDER_ID + " = " + folderId +
-                " ORDER BY CASE WHEN " + KEY_DUE_DATE + " IS NULL THEN 1 ELSE 0 END, " +
+                " ORDER BY " + KEY_COMPLETED + " ASC, " +
+                "CASE WHEN " + KEY_DUE_DATE + " IS NULL OR " + KEY_DUE_DATE + " = '' THEN 1 ELSE 0 END, " +
                 KEY_DUE_DATE + " ASC";
 
         SQLiteDatabase db = this.getReadableDatabase();
@@ -229,6 +229,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 list.setFolderId(cursor.getLong(2));
                 list.setDueDate(cursor.getString(3));
                 list.setReminder(cursor.getString(4));
+                list.setCompleted(cursor.getInt(5) == 1);
 
                 listItems.add(list);
             } while (cursor.moveToNext());
@@ -255,6 +256,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 list.setFolderId(cursor.getLong(2));
                 list.setDueDate(cursor.getString(3));
                 list.setReminder(cursor.getString(4));
+                list.setCompleted(cursor.getInt(5) == 1);
 
                 listItems.add(list);
             } while (cursor.moveToNext());
@@ -265,25 +267,26 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     /**
-     * Get all lists from all folders, sorted by due date
+     * Get all lists from all folders, sorted by completion status then due date
      * @return List of all EduList items
      */
     public List<EduList> getAllListsSortedByDueDate() {
         List<EduList> listItems = new ArrayList<>();
 
-        // This query selects all lists and orders by due date
-        // NULL due dates will be at the end of the list
+        // Order by completion first (incomplete items first), then by due date
         String selectQuery = "SELECT " + TABLE_LISTS + "." + KEY_ID + ", " +
                 TABLE_LISTS + "." + KEY_LIST_NAME + ", " +
                 TABLE_LISTS + "." + KEY_FOLDER_ID + ", " +
                 TABLE_LISTS + "." + KEY_DUE_DATE + ", " +
                 TABLE_LISTS + "." + KEY_REMINDER + ", " +
+                TABLE_LISTS + "." + KEY_COMPLETED + ", " +
                 TABLE_FOLDERS + "." + KEY_FOLDER_NAME +
                 " FROM " + TABLE_LISTS +
                 " LEFT JOIN " + TABLE_FOLDERS +
                 " ON " + TABLE_LISTS + "." + KEY_FOLDER_ID + " = " + TABLE_FOLDERS + "." + KEY_ID +
-                " ORDER BY CASE WHEN " + KEY_DUE_DATE + " IS NULL THEN 1 ELSE 0 END, " +
-                KEY_DUE_DATE + " ASC";
+                " ORDER BY " + TABLE_LISTS + "." + KEY_COMPLETED + " ASC, " +
+                "CASE WHEN " + TABLE_LISTS + "." + KEY_DUE_DATE + " IS NULL OR " + TABLE_LISTS + "." + KEY_DUE_DATE + " = '' THEN 1 ELSE 0 END, " +
+                TABLE_LISTS + "." + KEY_DUE_DATE + " ASC";
 
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor cursor = db.rawQuery(selectQuery, null);
@@ -296,9 +299,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 list.setFolderId(cursor.getLong(2));
                 list.setDueDate(cursor.getString(3));
                 list.setReminder(cursor.getString(4));
+                list.setCompleted(cursor.getInt(5) == 1);
                 // Store folder name in the list object
-                if (cursor.getString(5) != null) {
-                    list.setFolderName(cursor.getString(5));
+                if (cursor.getString(6) != null) {
+                    list.setFolderName(cursor.getString(6));
                 }
 
                 listItems.add(list);
@@ -327,6 +331,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 list.setFolderId(cursor.getLong(2));
                 list.setDueDate(cursor.getString(3));
                 list.setReminder(cursor.getString(4));
+                list.setCompleted(cursor.getInt(5) == 1);
 
                 listItems.add(list);
             } while (cursor.moveToNext());
